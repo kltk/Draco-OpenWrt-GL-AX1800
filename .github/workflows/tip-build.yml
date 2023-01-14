@@ -1,0 +1,167 @@
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: SSH connection to Actions
+        required: false
+        default: false
+        type: boolean
+      clean:
+        description: clean cache
+        required: false
+        default: false
+        type: boolean
+      profile:
+        description: 选择配置
+        required: true
+        default: '["axt1800_armv8"]'
+        type: choice
+        options:
+        - '["axt1800"]'
+        - '["axt1800_armv8"]'
+        - '["yuncore_ax840"]'
+  push:
+    branches:
+      - dev
+
+env:
+  REPO_URL: https://github.com/Telecominfraproject/wlan-ap
+  REPO_BRANCH: staging-qsdk-ath12
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_WETRANSFER: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    name: Build ${{matrix.target}}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON( github.event.inputs.profile || '["axt1800"]') }}
+
+    steps:
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install tzdata
+        sudo apt-get install -y time git-core build-essential gcc-multilib clang libncurses5-dev zlib1g-dev gawk flex gettext wget unzip python python3 python3-pip python3-yaml libssl-dev rsync
+        sudo apt-get clean
+        sudo pip3 install kconfiglib
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
+
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        echo $PWD
+        echo $GITHUB_WORKSPACE
+        git clone $REPO_URL -b $REPO_BRANCH builder
+        ln -sf /workdir/builder $GITHUB_WORKSPACE/builder
+        mv $GITHUB_WORKSPACE/profiles/* /workdir/builder/profiles/
+
+    - name: run setup.py
+      run: |
+        cd /workdir/builder
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@github.com"
+        ./setup.py --setup
+
+    - name: SSH connection to Actions
+      uses: P3TERX/ssh2actions@v1.0.0
+      if: github.event.inputs.ssh == 'true'
+
+    - name: Download package
+      run: |
+        cd /workdir/builder/openwrt
+        ./scripts/gen_config.py ${{matrix.target}}
+
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+        make defconfig
+
+    - name: show config
+      working-directory: /workdir/builder/openwrt
+      run: |
+        echo ::group::config
+        cat .config
+        echo ::endgroup::
+        echo ::group::diffconfig
+        ./scripts/diffconfig.sh
+        echo ::endgroup::
+
+    - name: Set Variable
+      id: variable
+      working-directory: /workdir/builder/openwrt
+      run: |
+        echo "date=$(/bin/date -u '+%Y%m%d%H%M%S')" >> $GITHUB_OUTPUT
+        echo "hash=$(git log --pretty=tformat:'%h' -n1 tools toolchain)" >> $GITHUB_OUTPUT
+        echo "prefix=${{github.event.inputs.clean == 'true' && 'ignore-' || ''}}" >> $GITHUB_OUTPUT
+
+    - name: ccache
+      uses: actions/cache@v3
+      with:
+        key: openwrt-${{ steps.variable.outputs.hash }}-${{steps.variable.outputs.date}}
+        restore-keys: |
+          ${{ steps.variable.outputs.prefix }}openwrt-${{ steps.variable.outputs.hash }}-
+          ${{ steps.variable.outputs.prefix }}openwrt-
+        path: |
+          /workdir/builder/openwrt/.ccache
+          /workdir/builder/openwrt/staging_dir/host*
+          /workdir/builder/openwrt/staging_dir/tool*
+
+    - name: Compile the firmware
+      id: compile
+      run: |
+        cd /workdir/builder/openwrt
+        echo -e "$(nproc) thread compile"
+        make -j$(expr $(nproc) + 1) IGNORE_ERRORS=m || make -j1 IGNORE_ERRORS=m V=s
+
+        echo "::set-output name=status::success"
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+    - name: Check space usage
+      if: (!cancelled())
+      run: df -hT
+
+    - name: Organize files
+      working-directory: /workdir/builder/openwrt
+      run: |
+        find bin -iname '*.apk' -delete
+        ./scripts/diffconfig.sh > bin/targets/ipq60xx/generic/diff.config
+        cp .config bin/targets/ipq60xx/generic/config
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: /workdir/builder/openwrt/bin
+
+    - name: Delete workflow runs
+      uses: dmvict/clean-workflow-runs@v1.0.0
+      with:
+        token: ${{ github.token }}
+        save_period: 1
+        save_min_runs_number: 1
+        run_conclusions: |
+          action_required
+          cancelled
+          failure
+          neutral
+          skipped
+          stale
+          timed_out
