@@ -21,10 +21,7 @@ on:
         type: choice
         options:
         - '["axt1800"]'
-        - '["glinet-ax1800"]'
-        - '["glinet-ax1800-5-4"]'
         - '["glinet-axt1800"]'
-        - '["glinet-axt1800-5-4"]'
         - '["target_wlan_ap-gl-axt1800-5-4"]'
   push:
     branches:
@@ -98,7 +95,7 @@ jobs:
     - name: Download package
       run: |
         cd /workdir/gl-infra-builder/wlan-ap/openwrt
-        ./scripts/gen_config.py glinet_depends ${{matrix.target}}
+        ./scripts/gen_config.py ${{matrix.target}}
 
         git clone https://github.com/gl-inet/glinet4.x.git -b main /workdir/glinet
         rm -f /workdir/glinet/ipq60xx/gl-sdk4-luci_git-2022.236.25805-6db5332-1_arm_cortex-a7.ipk
