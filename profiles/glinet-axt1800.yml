@@ -30,6 +30,6 @@ feeds:
   - name: fullconenat
     path: ../../feeds/fullconenat
 include:
-  - target_wlan_ap-gl-ax1800-common-5-4
+  - target_wlan_ap-gl-ax1800
   - glinet_depends
   - glinet_nas
