@@ -30,6 +30,10 @@ feeds:
   - name: fullconenat
     path: ../../feeds/fullconenat
 include:
-  - target_wlan_ap-gl-ax1800
+  - target_wlan_ap-gl-ax1800-common-5-4
   - glinet_depends
   - glinet_nas
+
+packages:
+  - kmod-hwmon-pwmfan
+  - kmod-gl-sdk4-fan
