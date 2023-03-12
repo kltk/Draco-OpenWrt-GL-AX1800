@@ -77,7 +77,7 @@ jobs:
         cd /workdir/gl-infra-builder
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@github.com"
-        python3 setup.py -c configs/config-wlan-ap.yml
+        python3 setup.py -c configs/config-wlan-ap-5.4.yml
 
     - name: Clone fullcone
       working-directory: /workdir/gl-infra-builder/wlan-ap/openwrt
