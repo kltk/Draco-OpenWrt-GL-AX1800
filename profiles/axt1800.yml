@@ -50,6 +50,7 @@ packages:
   - kmod-sdhci
   - kmod-tcp-bbr
   - mmc-utils
+  - oui-librpc
   # - iptables-mod-fullconenat
 diffconfig: |
   CONFIG_PACKAGE_luci-app-openclash=m
